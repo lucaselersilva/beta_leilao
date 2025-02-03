@@ -195,42 +195,63 @@ def pagina_mapa():
 
     conn = get_db_connection()
     query = """
-    SELECT endereco, cidade, latitude, longitude, preco_venda 
+    SELECT endereco, cidade, latitude, longitude, preco_venda, numero_imovel
     FROM imovel_caixa;
     """
     df = pd.read_sql(query, conn)
     conn.close()
 
+    # Remover imóveis sem coordenadas e com preço igual a 0
     df = df.dropna(subset=["latitude", "longitude"])
+    df = df[df["preco_venda"] > 0]
 
     if df.empty:
-        st.warning("Nenhum imóvel encontrado com coordenadas válidas.")
+        st.warning("❌ Nenhum imóvel encontrado com coordenadas válidas e preço maior que zero.")
         return
 
     # Adicionar Filtro de Preço
     min_preco, max_preco = int(df["preco_venda"].min()), int(df["preco_venda"].max())
     preco_selecionado = st.slider("Selecione o intervalo de preço (R$)", min_preco, max_preco, (min_preco, max_preco), format="R$ %d")
+
     # Filtrar imóveis pelo preço selecionado
     df_filtrado = df[(df["preco_venda"] >= preco_selecionado[0]) & (df["preco_venda"] <= preco_selecionado[1])]
 
     if df_filtrado.empty:
-        st.warning("Nenhum imóvel dentro da faixa de preço selecionada.")
+        st.warning("⚠️ Nenhum imóvel dentro da faixa de preço selecionada.")
         return
 
     # Centralizar o mapa com base nos imóveis filtrados
-    lat_mean, lon_mean = df_filtrado["latitude"].mean(), df_filtrado["longitude"].mean()
+    lat_mean = df_filtrado["latitude"].mean() if not df_filtrado["latitude"].isna().all() else -15.8267
+    lon_mean = df_filtrado["longitude"].mean() if not df_filtrado["longitude"].isna().all() else -47.9218
+
     mapa = folium.Map(location=[lat_mean, lon_mean], zoom_start=6)
 
-    # Adicionar marcadores apenas com o preço do imóvel
+    # Adicionar marcadores com link clicável
     for _, row in df_filtrado.iterrows():
+        numero_imovel = str(row["numero_imovel"]).replace("-", "") if pd.notna(row["numero_imovel"]) else ""
+        link_imovel = f"https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnImovel={numero_imovel}" if numero_imovel else "#"
+
         preco_formatado = f"R$ {row['preco_venda']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        popup_html = f"""
+        <b>Preço:</b> {preco_formatado}<br>
+        <b>Endereço:</b> {row['endereco']} - {row['cidade']}<br>
+        <a href="{link_imovel}" target="_blank">🔗 Ver detalhes</a>
+        """
+
         folium.Marker(
             [row["latitude"], row["longitude"]],
-            popup=preco_formatado,
+            popup=folium.Popup(popup_html, max_width=300),
             tooltip=preco_formatado
         ).add_to(mapa)
 
-    folium_static(mapa)
+    # Exibir o mapa
+    try:
+        folium_static(mapa)
+    except:
+        st.components.v1.html(mapa._repr_html_(), height=600)
+
+
 
 
 
