@@ -14,35 +14,82 @@ def get_db_connection():
     return conn
 
 # Página de listagem de imóveis
+import streamlit as st
+import sqlite3
+import pandas as pd
+import os
+import folium
+from streamlit_folium import folium_static
+# from folium.plugins import LayerControl
+import matplotlib.pyplot as plt
+import requests
+
+# Adicionar estilização CSS personalizada
+st.markdown("""
+    <style>
+        .stTitle { text-align: center; }
+        div.stButton > button {
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 8px;
+            padding: 10px;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #f8f9fa;
+        }
+        .stDataFrame { border-radius: 10px; }
+        input {
+            border-radius: 5px;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# Conectar ao banco de dados
+def get_db_connection():
+    db_path = os.path.join(os.getcwd(), "imoveis.db")
+    conn = sqlite3.connect(db_path)
+    return conn
+
+# Página de listagem de imóveis
 def pagina_lista_imoveis():
+    from streamlit_folium import st_folium
+    import folium
     st.title("📄 Lista de Imóveis")
-    
     conn = get_db_connection()
+    query = """
+    SELECT endereco AS 'Endereço', 
+           preco_avaliacao AS 'Preço de Avaliação', 
+           desconto AS 'Desconto (%)' 
+       FROM imovel_caixa
+    ORDER BY desconto DESC;
+
+    """
+    df = pd.read_sql(query, conn)
+    conn.close()
     
-    # Consulta para obter os estados disponíveis
-    query_estados = "SELECT DISTINCT estado FROM imovel_caixa ORDER BY estado;"
-    estados = pd.read_sql(query_estados, conn)["estado"].tolist()
-    
-    # Caixa de seleção para escolher um estado
-    estado_selecionado = st.selectbox("Selecione um estado:", ["Selecione"] + estados)
+    if not df.empty:
+        df['Preço de Avaliação'] = df['Preço de Avaliação'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        df['Desconto (%)'] = df['Desconto (%)'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "-")
+        st.write("### 🔍 Resultados Encontrados:")
+        st.dataframe(df, use_container_width=True, height=600, width = 2400)
+        
+        # # Criar o mapa
+        # mapa = folium.Map(location=[df["latitude"].mean(), df["longitude"].mean()], zoom_start=6)
+        
+        # # Adicionar marcadores no mapa
+        # for _, row in df.dropna(subset=['latitude', 'longitude']).iterrows():
+        #     marker = folium.Marker(
+        #         [row["latitude"], row["longitude"]],
+        #         popup=f"{row['Endereço']}<br>Preço: {row['Preço de Avaliação']}<br>Desconto: {row['Desconto (%)']}%",
 
-    # Inicializa um DataFrame vazio para evitar erros
-    df = pd.DataFrame()
+        #         tooltip=row["Endereço"]
+        #     )
+        #     marker.add_to(mapa)
+        
+        # st_folium(mapa, width=700, height=500)
+    else:
+        st.warning("Nenhum imóvel encontrado.")
 
-    if estado_selecionado != "Selecione":
-        query = """
-        SELECT endereco, cidade, latitude, longitude, preco_venda 
-        FROM imovel_caixa 
-        WHERE estado = ?;
-        """
-        df = pd.read_sql(query, conn, params=(estado_selecionado,))
-
-        if not df.empty:
-            # Exibe os dados filtrados
-            st.write("### 🔍 Resultados Encontrados:")
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.warning("Nenhum imóvel encontrado para este estado.")
 
 # Página do mapa com imóveis
 def pagina_mapa():
