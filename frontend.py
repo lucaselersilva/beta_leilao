@@ -47,6 +47,7 @@ def pagina_lista_imoveis():
 # Página do mapa com imóveis
 def pagina_mapa():
     st.title("🗺️ Mapa de Imóveis")
+
     conn = get_db_connection()
     query = """
     SELECT endereco, cidade, latitude, longitude, preco_venda 
@@ -54,27 +55,39 @@ def pagina_mapa():
     """
     df = pd.read_sql(query, conn)
     conn.close()
-    
-    # Remover linhas com valores nulos em latitude e longitude
+
     df = df.dropna(subset=["latitude", "longitude"])
-    
-    # Criar mapa centralizado na média das coordenadas
-    if not df.empty:
-        lat_mean, lon_mean = df["latitude"].mean(), df["longitude"].mean()
-        mapa = folium.Map(location=[lat_mean, lon_mean], zoom_start=6)
-        
-        # Adicionar marcadores ao mapa
-        for _, row in df.iterrows():
-            folium.Marker(
-                [row["latitude"], row["longitude"]],
-                popup=f"{row['endereco']} - {row['cidade']}\nPreço: R$ {row['preco_venda']:.2f}",
-                tooltip=row['endereco']
-            ).add_to(mapa)
-        
-        # Renderizar o mapa no Streamlit
-        folium_static(mapa)
-    else:
+
+    if df.empty:
         st.warning("Nenhum imóvel encontrado com coordenadas válidas.")
+        return
+
+    # Adicionar Filtro de Preço
+    min_preco, max_preco = int(df["preco_venda"].min()), int(df["preco_venda"].max())
+    preco_selecionado = st.slider("Selecione o intervalo de preço (R$)", min_preco, max_preco, (min_preco, max_preco), format="R$ %d")
+    # Filtrar imóveis pelo preço selecionado
+    df_filtrado = df[(df["preco_venda"] >= preco_selecionado[0]) & (df["preco_venda"] <= preco_selecionado[1])]
+
+    if df_filtrado.empty:
+        st.warning("Nenhum imóvel dentro da faixa de preço selecionada.")
+        return
+
+    # Centralizar o mapa com base nos imóveis filtrados
+    lat_mean, lon_mean = df_filtrado["latitude"].mean(), df_filtrado["longitude"].mean()
+    mapa = folium.Map(location=[lat_mean, lon_mean], zoom_start=6)
+
+    # Adicionar marcadores apenas com o preço do imóvel
+    for _, row in df_filtrado.iterrows():
+        preco_formatado = f"R$ {row['preco_venda']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        folium.Marker(
+            [row["latitude"], row["longitude"]],
+            popup=preco_formatado,
+            tooltip=preco_formatado
+        ).add_to(mapa)
+
+    folium_static(mapa)
+
+
 
 # Página da calculadora
 def pagina_calculadora_modificada():
