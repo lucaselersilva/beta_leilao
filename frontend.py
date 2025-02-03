@@ -50,45 +50,143 @@ def get_db_connection():
     conn = sqlite3.connect(db_path)
     return conn
 
+
+
+
+
 # Página de listagem de imóveis
+import streamlit as st
+import pandas as pd
+import sqlite3  # Certifique-se de importar o SQLite
+
+def get_db_connection():
+    """Cria e retorna a conexão com o banco de dados SQLite."""
+    try:
+        conn = sqlite3.connect("imoveis.db")  # Caminho correto do banco de dados
+        return conn
+    except Exception as e:
+        st.error(f"Erro ao conectar ao banco de dados: {e}")
+        return None
+
 def pagina_lista_imoveis():
-    from streamlit_folium import st_folium
-    import folium
     st.title("📄 Lista de Imóveis")
+
     conn = get_db_connection()
+    if conn is None:
+        return
+
+    try:
+        # 🔹 Buscar a lista de estados ANTES de fechar a conexão
+        query_estados = "SELECT DISTINCT estado FROM imovel_caixa"
+        estados_df = pd.read_sql(query_estados, conn)
+        
+        if "estado" in estados_df.columns:
+            estados = estados_df["estado"].dropna().tolist()
+        else:
+            estados = []
+            st.warning("A coluna 'estado' não foi encontrada no banco de dados.")
+    except Exception as e:
+        st.error(f"Erro ao obter a lista de estados: {e}")
+        conn.close()
+        return  # Finaliza a função para evitar novos erros
+
+    # Adicionar filtro de estado antes de carregar os imóveis
+    estado_selecionado = st.selectbox("📍 Selecione o Estado:", ["Todos"] + estados)
+
+    # 🔹 Buscar os imóveis com o filtro correto
     query = """
-    SELECT endereco AS 'Endereço', 
+    SELECT numero_imovel, endereco AS 'Endereço', estado,
            preco_avaliacao AS 'Preço de Avaliação', 
            desconto AS 'Desconto (%)' 
-       FROM imovel_caixa
-    ORDER BY desconto DESC;
-
+    FROM imovel_caixa
     """
-    df = pd.read_sql(query, conn)
-    conn.close()
     
-    if not df.empty:
-        df['Preço de Avaliação'] = df['Preço de Avaliação'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        df['Desconto (%)'] = df['Desconto (%)'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "-")
-        st.write("### 🔍 Resultados Encontrados:")
-        st.dataframe(df, use_container_width=True, height=600, width = 2400)
-        
-        # # Criar o mapa
-        # mapa = folium.Map(location=[df["latitude"].mean(), df["longitude"].mean()], zoom_start=6)
-        
-        # # Adicionar marcadores no mapa
-        # for _, row in df.dropna(subset=['latitude', 'longitude']).iterrows():
-        #     marker = folium.Marker(
-        #         [row["latitude"], row["longitude"]],
-        #         popup=f"{row['Endereço']}<br>Preço: {row['Preço de Avaliação']}<br>Desconto: {row['Desconto (%)']}%",
+    if estado_selecionado != "Todos":
+        query += f" WHERE estado = '{estado_selecionado}'"
+    
+    query += " ORDER BY desconto DESC;"
 
-        #         tooltip=row["Endereço"]
-        #     )
-        #     marker.add_to(mapa)
-        
-        # st_folium(mapa, width=700, height=500)
-    else:
-        st.warning("Nenhum imóvel encontrado.")
+    try:
+        df = pd.read_sql(query, conn)  # Executa a consulta de imóveis
+    except Exception as e:
+        st.error(f"Erro ao executar a consulta SQL: {e}")
+        conn.close()
+        return
+
+    conn.close()  # 🔹 Fecha a conexão aqui, após todas as consultas serem feitas.
+
+    # # 🔍 Verificar se a coluna "estado" realmente existe
+    # st.write("Colunas do DataFrame:", df.columns.tolist())  # Depuração
+
+    # if "estado" not in df.columns:
+    #     st.warning("A coluna 'estado' não foi encontrada na consulta. Verifique o banco de dados.")
+    #     return
+
+    # if df.empty:
+    #     st.warning("Nenhum imóvel encontrado para o estado selecionado.")
+    #     return
+
+    # Formatar preços
+    df['Preço de Avaliação'] = df['Preço de Avaliação'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    df['Desconto (%)'] = df['Desconto (%)'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "-")
+
+    # Criar uma nova coluna para o link ao lado do endereço
+    base_url = "https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnImovel="
+    df["Link"] = df["numero_imovel"].astype(str).str.replace("-", "").apply(
+        lambda x: f'<a href="{base_url}{x}" target="_blank" class="link-column">Acessar</a>'
+    )
+
+    # Remover a coluna numero_imovel da exibição final
+    df.drop(columns=["numero_imovel"], inplace=True)
+
+    # Criar CSS embutido para estilizar a tabela e o link
+    custom_css = """
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+        .link-column {
+            text-decoration: none;
+            font-size: 14px;
+            color: #007BFF;
+            font-weight: bold;
+        }
+        .link-column:hover {
+            color: #0056b3;
+            text-decoration: underline;
+        }
+    </style>
+    """
+
+    # Exibir CSS no Streamlit
+    st.markdown(custom_css, unsafe_allow_html=True)
+
+    # Reorganizar colunas para exibir o link ao lado do endereço
+    cols = ["Endereço", "estado", "Link"] + [col for col in df.columns if col not in ["Endereço", "estado", "Link"]]
+    df = df[cols]
+
+    # Converter DataFrame para HTML (escape=False para manter os links)
+    tabela_html = df.to_html(escape=False, index=False)
+
+    # ✅ Corrigir o cabeçalho para que "Link" não apareça como HTML
+    tabela_html = tabela_html.replace("&lt;a ", "<a ").replace("&lt;/a&gt;", "</a>")
+
+    # Renderizar tabela corretamente dentro do Streamlit
+    st.write("### 🔍 Resultados Encontrados:")
+    st.markdown(tabela_html, unsafe_allow_html=True)
+
+
+    # else:
+    #     st.warning("Nenhum imóvel encontrado.")
 
 
 # Página do mapa com imóveis

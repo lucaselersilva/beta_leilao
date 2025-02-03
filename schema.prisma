@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:C:\\Lucas\\Leilao\\Prjeto Oficial Otimizado\\imoveis.db"
+}
+
+model Imovel {
+  id              Int     @id @default(autoincrement())
+  title           String?
+  price           String?
+  endereco        String?
+  url             String  @unique
+  desconto        Float?
+  areaUtil        String?
+  quartos         Float?
+  matricula       String?
+  edital          String?
+  dataFinalLeilao String?
+  financiamento   String?
+  umaPraça       Float?
+  duasPraças     Float?
+  embedding       Json?
+}
+
+model SITE {
+  id            Int    @id @default(autoincrement())
+  site          String
+  numeroImoveis Int
+}
+
+model responses {
+  id        Int      @id @default(autoincrement())
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model imovel_caixa {
+  id              Int     @id @default(autoincrement())
+  numero_imovel   String  @unique
+  tipo            String
+  endereco        String
+  cidade          String
+  cep             String?
+  quartos         Int?
+  preco_avaliacao Float?
+  preco_venda     Float?
+  desconto        Float?
+  financiamento   String?
+  data_1_leilao   String?
+  data_2_leilao   String?
+  valor_1_leilao  Float?
+  valor_2_leilao  Float?
+  area_total      Float?
+  area_privativa  Float?
+  area_terreno    Float?
+  link_edital     String?
+  latitude  Float?  // Adicionando latitude
+  longitude Float?  // Adicionando longitude
+  estado  String?
+}
+
+model url_caixa {
+  id           Int    @id @default(autoincrement())
+  url          String
+  sincronizado Int?   @default(0)
+  estado  String?
+}
