@@ -111,7 +111,7 @@ def pagina_lista_imoveis():
             conn.close()
             return 
 
-    # 🔹 Filtro de Cidade (Aparece apenas se um estado for selecionado)
+    # 🔹 Filtro de Cidade
     cidade_selecionada = None
     if estado_selecionado != "Todos" and cidades:
         cidade_selecionada = st.selectbox("🏙️ Selecione a Cidade:", ["Todas"] + cidades)
@@ -128,76 +128,105 @@ def pagina_lista_imoveis():
 
     num_quartos = st.selectbox("🛏️ Número de Quartos:", ["Todos"] + [str(q) for q in quartos_lista])
 
-    # 🔹 Construir a query com os filtros selecionados
-    query = """
-    SELECT numero_imovel, endereco AS 'Endereço', cidade, estado,
-           preco_avaliacao AS 'Preço de Avaliação', 
-           desconto AS 'Desconto (%)',
-           quartos AS 'Quartos'
-    FROM imovel_caixa
-    """
-    
-    filtros = []
-    if estado_selecionado != "Todos":
-        filtros.append(f"estado = '{estado_selecionado}'")
-    if cidade_selecionada and cidade_selecionada != "Todas":
-        filtros.append(f"cidade = '{cidade_selecionada}'")
-    if num_quartos != "Todos":
-        filtros.append(f"quartos = {num_quartos}")
+    # 🔹 Filtros de Preço e Desconto
+    col1, col2 = st.columns(2)
+    with col1:
+        preco_min = st.text_input("💰 Preço Mínimo:", value="", key="preco_min")
+        desconto_min = st.text_input("🔻 Desconto Mínimo (%):", value="", key="desconto_min")
+    with col2:
+        preco_max = st.text_input("💰 Preço Máximo:", value="", key="preco_max")
+        desconto_max = st.text_input("🔻 Desconto Máximo (%):", value="", key="desconto_max")
 
-    if filtros:
-        query += " WHERE " + " AND ".join(filtros)
-    
-    query += " ORDER BY desconto DESC;"
+    # 🔹 Botão para aplicar filtros
+    if st.button("🔎 Aplicar Filtro"):
+        # Validar se os valores são numéricos
+        try:
+            preco_min = float(preco_min) if preco_min else None
+            preco_max = float(preco_max) if preco_max else None
+            desconto_min = float(desconto_min) if desconto_min else None
+            desconto_max = float(desconto_max) if desconto_max else None
+        except ValueError:
+            st.error("⚠️ Digite apenas valores numéricos para os campos de preço e desconto!")
+            return
 
-    try:
-        df = pd.read_sql(query, conn)
-    except Exception as e:
-        st.error(f"Erro ao executar a consulta SQL: {e}")
-        conn.close()
-        return
+        # 🔹 Construir a query com os filtros selecionados
+        query = """
+        SELECT numero_imovel, endereco AS 'Endereço', cidade, estado,
+               preco_avaliacao AS 'Preço de Avaliação', 
+               desconto AS 'Desconto (%)',
+               quartos AS 'Quartos'
+        FROM imovel_caixa
+        """
+        
+        filtros = []
+        if estado_selecionado != "Todos":
+            filtros.append(f"estado = '{estado_selecionado}'")
+        if cidade_selecionada and cidade_selecionada != "Todas":
+            filtros.append(f"cidade = '{cidade_selecionada}'")
+        if num_quartos != "Todos":
+            filtros.append(f"quartos = {num_quartos}")
+        if preco_min is not None:
+            filtros.append(f"preco_avaliacao >= {preco_min}")
+        if preco_max is not None:
+            filtros.append(f"preco_avaliacao <= {preco_max}")
+        if desconto_min is not None:
+            filtros.append(f"desconto >= {desconto_min}")
+        if desconto_max is not None:
+            filtros.append(f"desconto <= {desconto_max}")
 
-    conn.close()  # 🔹 Fechar conexão
+        if filtros:
+            query += " WHERE " + " AND ".join(filtros)
+        
+        query += " ORDER BY desconto DESC;"
 
-    if df.empty:
-        st.warning("Nenhum imóvel encontrado para os filtros selecionados.")
-        return
+        try:
+            df = pd.read_sql(query, conn)
+        except Exception as e:
+            st.error(f"Erro ao executar a consulta SQL: {e}")
+            conn.close()
+            return
 
-    # Formatar preços
-    df['Preço de Avaliação'] = df['Preço de Avaliação'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    df['Desconto (%)'] = df['Desconto (%)'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "-")
+        conn.close()  # 🔹 Fechar conexão
 
-    # Criar links para os imóveis
-    base_url = "https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnImovel="
-    df["Link"] = df["numero_imovel"].astype(str).str.replace("-", "").apply(
-        lambda x: f'<a href="{base_url}{x}" target="_blank" class="link-column">Acessar</a>'
-    )
+        if df.empty:
+            st.warning("Nenhum imóvel encontrado para os filtros selecionados.")
+            return
 
-    df.drop(columns=["numero_imovel"], inplace=True)
+        # Formatar preços
+        df['Preço de Avaliação'] = df['Preço de Avaliação'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        df['Desconto (%)'] = df['Desconto (%)'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "-")
 
-    # 🔹 Estilização da tabela
-    custom_css = """
-    <style>
-        table {width: 100%; border-collapse: collapse;}
-        th, td {border: 1px solid #ddd; padding: 10px; text-align: left;}
-        th {background-color: #f4f4f4;}
-        .link-column {text-decoration: none; font-size: 14px; color: #007BFF; font-weight: bold;}
-        .link-column:hover {color: #0056b3; text-decoration: underline;}
-    </style>
-    """
-    st.markdown(custom_css, unsafe_allow_html=True)
+        # Criar links para os imóveis
+        base_url = "https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnImovel="
+        df["Link"] = df["numero_imovel"].astype(str).str.replace("-", "").apply(
+            lambda x: f'<a href="{base_url}{x}" target="_blank" class="link-column">Acessar</a>'
+        )
 
-    # Reorganizar colunas para exibir o link ao lado do endereço
-    cols = ["Endereço", "cidade", "estado", "Quartos", "Link", "Preço de Avaliação", "Desconto (%)"]
-    df = df[cols]
+        df.drop(columns=["numero_imovel"], inplace=True)
 
-    # Converter DataFrame para HTML (escape=False para manter os links)
-    tabela_html = df.to_html(escape=False, index=False)
-    tabela_html = tabela_html.replace("&lt;a ", "<a ").replace("&lt;/a&gt;", "</a>")
+        # 🔹 Estilização da tabela
+        custom_css = """
+        <style>
+            table {width: 100%; border-collapse: collapse;}
+            th, td {border: 1px solid #ddd; padding: 10px; text-align: left;}
+            th {background-color: #f4f4f4;}
+            .link-column {text-decoration: none; font-size: 14px; color: #007BFF; font-weight: bold;}
+            .link-column:hover {color: #0056b3; text-decoration: underline;}
+        </style>
+        """
+        st.markdown(custom_css, unsafe_allow_html=True)
 
-    # Renderizar tabela no Streamlit
-    st.write("### 🔍 Resultados Encontrados:")
-    st.markdown(tabela_html, unsafe_allow_html=True)
+        # Reorganizar colunas para exibir o link ao lado do endereço
+        cols = ["Endereço", "cidade", "estado", "Quartos", "Link", "Preço de Avaliação", "Desconto (%)"]
+        df = df[cols]
+
+        # Converter DataFrame para HTML (escape=False para manter os links)
+        tabela_html = df.to_html(escape=False, index=False)
+        tabela_html = tabela_html.replace("&lt;a ", "<a ").replace("&lt;/a&gt;", "</a>")
+
+        # Renderizar tabela no Streamlit
+        st.write("### 🔍 Resultados Encontrados:")
+        st.markdown(tabela_html, unsafe_allow_html=True)
 
 
 
